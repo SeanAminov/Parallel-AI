@@ -1,7 +1,7 @@
 // src/components/UserPanel.jsx
 import { motion } from "framer-motion";
 
-export default function UserPanel({ name, isSelf }) {
+export default function UserPanel({ name, isSelf, latestText = "" }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 25, scale: 0.95 }}
@@ -27,9 +27,10 @@ export default function UserPanel({ name, isSelf }) {
           padding: "18px",
           overflowY: "auto",
           border: "1px solid rgba(255,255,255,0.05)",
+          whiteSpace: "pre-wrap",
         }}
       >
-        AI output will appear here…
+        {latestText || "AI output will appear here…"}
       </div>
     </motion.div>
   );
