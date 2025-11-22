@@ -4,14 +4,15 @@ from datetime import datetime
 from typing import Dict, List, Literal, Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
 from config import (
     CLIENT_A,
     CLIENT_B,
     CLIENT_C,
     CLIENT_D,
-    OPENAI_MODEL_TWIN,
-    OPENAI_MODEL_COORDINATOR,
+    OPENAI_MODEL,
 )
 
 # ============================================================
@@ -19,8 +20,8 @@ from config import (
 # ============================================================
 
 class Message(BaseModel):
-    sender_id: str           # e.g. "user:severin", "agent:quant"
-    sender_name: str         # "Severin", "Quant Twin", etc.
+    sender_id: str           # e.g. "user:severin", "agent:A"
+    sender_name: str         # "Severin", "Client A", etc.
     role: Literal["user", "assistant", "system"]
     content: str
     created_at: datetime
@@ -39,45 +40,44 @@ class AgentProfile(BaseModel):
     display_name: str
     description: str
     speciality: str
-    client_name: str  # which OpenAI client to use
+    client_name: str  # "A", "B", "C", or "D"
 
 
 AGENTS: Dict[str, AgentProfile] = {
-    "quant": AgentProfile(
-        agent_id="quant",
-        display_name="Quant Twin",
-        description="You are the quant & modeling AI twin. Focus on trading logic, risk, modeling, and numerics.",
-        speciality="Quant research, trading systems, ML models.",
-        client_name="quant",
+    "A": AgentProfile(
+        agent_id="A",
+        display_name="Client A",
+        description="You are Client A, one of four collaborating AI clients.",
+        speciality="You provide perspective A on the project.",
+        client_name="A",
     ),
-    "backend": AgentProfile(
-        agent_id="backend",
-        display_name="Backend Twin",
-        description="You are the backend & infra AI twin. Own APIs, data stores, services, security, devops.",
-        speciality="APIs, infra, databases, deployment.",
-        client_name="backend",
+    "B": AgentProfile(
+        agent_id="B",
+        display_name="Client B",
+        description="You are Client B, one of four collaborating AI clients.",
+        speciality="You provide perspective B on the project.",
+        client_name="B",
     ),
-    "frontend": AgentProfile(
-        agent_id="frontend",
-        display_name="Frontend Twin",
-        description="You are the frontend & UX AI twin. Design UI, flows, components, and copy.",
-        speciality="React, UX, product thinking.",
-        client_name="frontend",
+    "C": AgentProfile(
+        agent_id="C",
+        display_name="Client C",
+        description="You are Client C, one of four collaborating AI clients.",
+        speciality="You provide perspective C on the project.",
+        client_name="C",
     ),
 }
 
-# Coordinator (shared agent)
+# Client D is the coordinator / shared agent
 COORDINATOR_PROFILE = AgentProfile(
-    agent_id="coordinator",
-    display_name="Project Copilot",
+    agent_id="D",
+    display_name="Client D",
     description=(
-        "You are the coordinating AI that synthesizes the three twins' ideas "
-        "into one clear plan and answer for the humans."
+        "You are Client D, the coordinating client. You read Clients A, B, and C "
+        "and synthesize one clear answer and plan for the humans."
     ),
-    speciality="Synthesis, prioritization, breaking work into concrete steps.",
-    client_name="coordinator",
+    speciality="Synthesis, prioritization, and planning.",
+    client_name="D",
 )
-
 
 # ============================================================
 # API schemas
@@ -103,10 +103,18 @@ class PostMessageResponse(BaseModel):
 
 
 # ============================================================
-# FastAPI app
+# FastAPI app + CORS
 # ============================================================
 
-app = FastAPI(title="Shared Trio Project Copilot")
+app = FastAPI(title="Parallel Clients A–D")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],   # relax for hackathon; tighten later if needed
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ============================================================
@@ -114,15 +122,15 @@ app = FastAPI(title="Shared Trio Project Copilot")
 # ============================================================
 
 def get_client_for_agent(agent: AgentProfile):
-    if agent.client_name == "quant":
+    if agent.client_name == "A":
         return CLIENT_A
-    if agent.client_name == "backend":
+    if agent.client_name == "B":
         return CLIENT_B
-    if agent.client_name == "frontend":
+    if agent.client_name == "C":
         return CLIENT_C
-    if agent.client_name == "coordinator":
+    if agent.client_name == "D":
         return CLIENT_D
-    # Fallback if misconfigured (shouldn't happen)
+    # fallback (should not happen)
     return CLIENT_A
 
 
@@ -136,56 +144,52 @@ def build_twin_prompt(
     user_message: Message,
 ) -> List[Dict[str, str]]:
     """
-    Build messages for a specialist twin (quant/backend/frontend).
+    Build messages for Clients A, B, and C.
     They see:
       - their persona
       - the project summary
       - recent conversation
       - the latest human message
     """
-    # Take last N messages for context
     recent_msgs = room.messages[-12:]
 
     system_instructions = f"""
-You are {agent.display_name}, one of three specialist AI twins working on this project.
+You are {agent.display_name}, one of four AI clients collaborating on this project.
 
 Your persona:
 - {agent.description}
 - Your speciality: {agent.speciality}
 
-You are collaborating with:
-- Quant Twin
-- Backend Twin
-- Frontend Twin
+You are working together with Clients A, B, C, and D.
+Clients A, B, and C each provide a different perspective.
+Client D is the coordinator who synthesizes your ideas.
 
-You operate within a shared project memory.
+You all share a single project memory.
 
 CURRENT PROJECT SUMMARY (may be rough or outdated):
 {room.project_summary if room.project_summary else "(no project summary yet; help define it as you go.)"}
 
 Your goals:
-- React to the latest human message from your domain perspective.
-- Propose concrete next steps in YOUR domain (not generic fluff).
-- Optionally suggest an updated project summary in a section at the end:
+- React to the latest human message from your own perspective.
+- Propose concrete next steps in YOUR domain (2–5 bullets).
+- Optionally suggest an updated project summary at the end:
 
 SUMMARY_UPDATE:
 <1–3 sentences that refine or replace the summary>
 
-Keep your responses focused and fairly short (under ~300 words if possible).
+Keep responses focused and relatively short (under ~300 words).
 """
 
     messages: List[Dict[str, str]] = [
         {"role": "system", "content": system_instructions}
     ]
 
-    # Add some recent conversation context
     for m in recent_msgs:
         messages.append({
             "role": m.role,
             "content": f"{m.sender_name}: {m.content}",
         })
 
-    # Latest human message as the main question
     messages.append({
         "role": "user",
         "content": f"Latest human message from {user_message.sender_name}:\n{user_message.content}",
@@ -200,28 +204,28 @@ def build_coordinator_prompt(
     twin_outputs: Dict[str, str],
 ) -> List[Dict[str, str]]:
     """
-    Build messages for the Coordinator.
+    Build messages for Client D (coordinator).
     It sees:
       - project summary
       - latest human message
-      - all three twins' drafts
+      - A/B/C drafts
     and must create ONE unified answer.
     """
 
     system_instructions = f"""
-You are {COORDINATOR_PROFILE.display_name}, the coordinating AI for this room.
+You are {COORDINATOR_PROFILE.display_name}, the coordinating client (Client D).
 
 You receive:
 - The current project summary.
 - The latest human message.
-- Draft responses from three specialist AI twins:
-  - Quant Twin
-  - Backend Twin
-  - Frontend Twin
+- Draft responses from:
+  - Client A
+  - Client B
+  - Client C
 
 Your job:
-1. Synthesize their input into ONE clear, well-structured answer for the humans.
-2. Resolve contradictions and highlight trade-offs.
+1. Synthesize their input into ONE clear, structured answer for the humans.
+2. Resolve contradictions, highlight tradeoffs where relevant.
 3. Propose a short, concrete plan (2–5 next steps).
 4. Be practical and concise; avoid repeating the same idea three times.
 
@@ -230,24 +234,29 @@ If you think the project summary should be updated, include at the end:
 SUMMARY_UPDATE:
 <1–3 sentences that summarize the current project and direction>
 
-The human team will mostly see YOUR response as the main "Project Copilot" answer.
+The human team mostly sees YOUR response as the main answer.
 """
 
     messages: List[Dict[str, str]] = [
         {"role": "system", "content": system_instructions},
-        {"role": "system", "content": f"CURRENT PROJECT SUMMARY:\n{room.project_summary or '(none yet)'}"},
-        {"role": "user", "content": f"Latest human message from {user_message.sender_name}:\n{user_message.content}"},
+        {
+            "role": "system",
+            "content": f"CURRENT PROJECT SUMMARY:\n{room.project_summary or '(none yet)'}",
+        },
+        {
+            "role": "user",
+            "content": f"Latest human message from {user_message.sender_name}:\n{user_message.content}",
+        },
     ]
 
-    # Inject each twin's draft as assistant messages
     label_map = {
-        "quant": "Quant Twin",
-        "backend": "Backend Twin",
-        "frontend": "Frontend Twin",
+        "A": "Client A",
+        "B": "Client B",
+        "C": "Client C",
     }
 
     for agent_id, text in twin_outputs.items():
-        label = label_map.get(agent_id, agent_id)
+        label = label_map.get(agent_id, f"Client {agent_id}")
         messages.append({
             "role": "assistant",
             "content": f"{label} draft response:\n{text}",
@@ -269,7 +278,7 @@ def call_twin_agent(
     messages = build_twin_prompt(agent, room, user_message)
 
     resp = client.chat.completions.create(
-        model=OPENAI_MODEL_TWIN,
+        model=OPENAI_MODEL,
         messages=messages,
         temperature=0.4,
     )
@@ -285,7 +294,7 @@ def call_coordinator_agent(
     messages = build_coordinator_prompt(room, user_message, twin_outputs)
 
     resp = client.chat.completions.create(
-        model=OPENAI_MODEL_COORDINATOR,
+        model=OPENAI_MODEL,
         messages=messages,
         temperature=0.35,
     )
@@ -293,7 +302,7 @@ def call_coordinator_agent(
 
 
 # ============================================================
-# Summary updater
+# Summary helpers
 # ============================================================
 
 def extract_summary_update(text: str) -> Optional[str]:
@@ -306,12 +315,8 @@ def extract_summary_update(text: str) -> Optional[str]:
 
 
 def maybe_update_summary_from_twins(room: RoomState, twin_outputs: Dict[str, str]) -> None:
-    """
-    Look for SUMMARY_UPDATE in any twin's response.
-    Priority order: quant > backend > frontend.
-    """
-    priority = ["quant", "backend", "frontend"]
-    for agent_id in priority:
+    # simple priority: A > B > C
+    for agent_id in ["A", "B", "C"]:
         text = twin_outputs.get(agent_id, "") or ""
         new_summary = extract_summary_update(text)
         if new_summary:
@@ -356,7 +361,7 @@ def post_message(room_id: str, payload: PostMessageRequest):
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
 
-    # 1) Store the human message
+    # 1) human message
     user_msg = Message(
         sender_id=f"user:{payload.user_id}",
         sender_name=payload.user_name,
@@ -366,14 +371,13 @@ def post_message(room_id: str, payload: PostMessageRequest):
     )
     room.messages.append(user_msg)
 
-    # 2) Call each twin
+    # 2) Clients A, B, C
     twin_outputs: Dict[str, str] = {}
     for agent_id, agent in AGENTS.items():
         print(f"[room {room_id}] Calling {agent.display_name}...")
         reply_text = call_twin_agent(agent, room, user_msg)
         twin_outputs[agent_id] = reply_text
 
-        # Store twin message (you can hide these in the UI if you want)
         agent_msg = Message(
             sender_id=f"agent:{agent_id}",
             sender_name=agent.display_name,
@@ -383,14 +387,13 @@ def post_message(room_id: str, payload: PostMessageRequest):
         )
         room.messages.append(agent_msg)
 
-    # 3) Optionally update project summary from twins
     maybe_update_summary_from_twins(room, twin_outputs)
 
-    # 4) Call coordinator to synthesize ONE main answer
-    print(f"[room {room_id}] Calling coordinator (Project Copilot)...")
+    # 3) Client D (coordinator)
+    print(f"[room {room_id}] Calling Client D (coordinator)...")
     coord_text = call_coordinator_agent(room, user_msg, twin_outputs)
     coord_msg = Message(
-        sender_id="agent:coordinator",
+        sender_id="agent:D",
         sender_name=COORDINATOR_PROFILE.display_name,
         role="assistant",
         content=coord_text,
@@ -398,7 +401,6 @@ def post_message(room_id: str, payload: PostMessageRequest):
     )
     room.messages.append(coord_msg)
 
-    # 5) Optionally update project summary from coordinator
     maybe_update_summary_from_coordinator(room, coord_text)
 
     return PostMessageResponse(
