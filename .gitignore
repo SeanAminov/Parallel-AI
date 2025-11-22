@@ -1,1 +1,41 @@
-.env*
+# ---- Python / FastAPI
+.venv/
+env/
+venv/
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+coverage.*
+htmlcov/
+
+# Local data / DB / vector stores
+backend/data/
+backend/*.db
+backend/*.sqlite
+backend/rag_store/
+
+# Secrets
+*.env
+*.env.*
+!frontend/.env.example
+!backend/.env.example
+
+# ---- Node / Vite / React
+node_modules/
+dist/
+*.log
+*.local
+.DS_Store
+
+# IDE/editor
+.vscode/
+.idea/
+*.iml
+
+# OS cruft
+Thumbs.db
