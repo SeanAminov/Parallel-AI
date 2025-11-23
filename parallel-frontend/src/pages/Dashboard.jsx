@@ -21,7 +21,7 @@ function TeamView({ user, statuses }) {
   );
 }
 
-function InboxView() {
+function InboxView({ inbox }) {
   return (
     <div className="chat-wrapper glass">
       <div className="panel-head">
@@ -30,7 +30,18 @@ function InboxView() {
           <h2>Captured tasks</h2>
         </div>
       </div>
-      <p className="subhead">Tasks routed from chat will show here.</p>
+      {inbox.length === 0 && <p className="subhead">No tasks yet.</p>}
+      <div className="inbox-list">
+        {inbox.map((task) => (
+          <div className="inbox-item" key={task.id}>
+            <div className="inbox-title">{task.content}</div>
+            <div className="inbox-meta">
+              <span>{task.status}</span>
+              {task.priority && <span>{task.priority}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -45,6 +56,9 @@ export default function Dashboard() {
   const [user, setUser] = useState({ id: "demo-user", name: "You" });
   const [activityLog, setActivityLog] = useState([]);
   const [teamStatuses, setTeamStatuses] = useState([]);
+  const [roomId, setRoomId] = useState(null);
+  const [roomData, setRoomData] = useState(null);
+  const [inbox, setInbox] = useState([]);
   const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
   useEffect(() => {
@@ -77,23 +91,79 @@ export default function Dashboard() {
     ]);
   }, [activeTool, user.name]);
 
-  const renderRight = () => {
-    if (activeTool === "Team") return <TeamView user={user} statuses={teamStatuses} />;
-    if (activeTool === "Inbox") return <InboxView />;
-    if (activeTool === "IDE") return <IdeView />;
-    return <SummaryPanel user={user} activeTool={activeTool} activityLog={activityLog} />;
+  useEffect(() => {
+    if (!roomId) return;
+    const fetchRoom = async () => {
+      try {
+        const res = await fetch(`${apiBase}/rooms/${roomId}`, { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setRoomData(data);
+        }
+      } catch (err) {
+        // ignore
+      }
+    };
+    fetchRoom();
+    const id = setInterval(fetchRoom, 5000);
+    return () => clearInterval(id);
+  }, [roomId, apiBase]);
+
+  useEffect(() => {
+    if (!user.id) return;
+    const fetchInbox = async () => {
+      try {
+        const res = await fetch(`${apiBase}/users/${user.id}/inbox`, { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setInbox(data || []);
+        }
+      } catch (err) {
+        // ignore
+      }
+    };
+    fetchInbox();
+    const id = setInterval(fetchInbox, 7000);
+    return () => clearInterval(id);
+  }, [user.id, apiBase]);
+
+  const handleLogout = async () => {
+    try {
+      await fetch(`${apiBase}/auth/logout`, { method: "POST", credentials: "include" });
+    } catch (err) {
+      // ignore
+    } finally {
+      window.location.reload();
+    }
   };
 
+  const renderRight = () => {
+    if (activeTool === "Team") return <TeamView user={user} statuses={teamStatuses} />;
+    if (activeTool === "Inbox") return <InboxView inbox={inbox} />;
+    if (activeTool === "IDE") return <IdeView />;
+    return <SummaryPanel user={user} activeTool={activeTool} activityLog={activityLog} roomData={roomData} />;
+  };
+
+  const containerClass = sidebarOpen ? "dashboard-container" : "dashboard-container collapsed";
+
   return (
-    <div className="dashboard-container">
-      {sidebarOpen && <Sidebar active={activeTool} onSelect={setActiveTool} onToggle={() => setSidebarOpen(false)} />}
-      {!sidebarOpen && (
-        <button className="sidebar-toggle" onClick={() => setSidebarOpen(true)}>
-          ☰
-        </button>
+    <div className={containerClass}>
+      {sidebarOpen ? (
+        <Sidebar
+          active={activeTool}
+          onSelect={setActiveTool}
+          onToggle={() => setSidebarOpen(false)}
+          onLogout={handleLogout}
+        />
+      ) : (
+        <div className="sidebar-toggle-shell">
+          <button className="sidebar-toggle" onClick={() => setSidebarOpen(true)} aria-label="Expand sidebar">
+            ‹›
+          </button>
+        </div>
       )}
-      <ChatPanel user={user} />
-      <SummaryPanel user={user} activeTool={activeTool} activityLog={activityLog} />
+      <ChatPanel user={user} onRoomReady={setRoomId} />
+      {renderRight()}
     </div>
   );
 }

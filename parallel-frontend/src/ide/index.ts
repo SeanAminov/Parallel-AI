@@ -1,2 +1,1 @@
-export { IdeWorkspace } from "./IdeWorkspace";
-
+export { IdeWorkspace } from './IdeWorkspace';

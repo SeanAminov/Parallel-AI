@@ -49,7 +49,7 @@ if SPOON_IMPL == "official":
 else:
     from spoon_os import ask_one, ask_team, synthesize
 
-SUBSCRIBERS: set[tuple[asyncio.Queue, Dict[str, Optional[str]]]] = set()
+SUBSCRIBERS: list[tuple[asyncio.Queue, Dict[str, Optional[str]]]] = []
 PROPAGATE_ERRORS = os.getenv("PROPAGATE_ERRORS", "false").lower() == "true"
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
 ALGORITHM = "HS256"
@@ -323,7 +323,10 @@ def rate_limit_key(request: Request) -> str:
     ip = request.client.host if request.client else "unknown"
     token = request.cookies.get("access_token")
     sub = decode_token_sub(token) if token else None
-    return f"{ip}:{sub or 'anon'}"
+    # Prefer user-specific key when authenticated; fallback to IP for anonymous requests
+    if sub:
+        return f"user:{sub}"
+    return f"ip:{ip}"
 
 
 def check_rate_limit(key: str):
@@ -714,13 +717,14 @@ def publish_event(payload: Dict):
 
 async def event_generator(filters: Dict):
     queue: asyncio.Queue = asyncio.Queue()
-    SUBSCRIBERS.add((queue, filters))
+    SUBSCRIBERS.append((queue, filters))
     try:
         while True:
             data = await queue.get()
             yield f"data: {json.dumps(data)}\n\n"
     finally:
-        SUBSCRIBERS.discard((queue, filters))
+        if (queue, filters) in SUBSCRIBERS:
+            SUBSCRIBERS.remove((queue, filters))
 
 def run_graph(app_graph, inputs):
     """

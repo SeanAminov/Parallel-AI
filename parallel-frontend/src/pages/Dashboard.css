@@ -7,3 +7,58 @@
   box-sizing: border-box;
   background: var(--bg-pearl);
 }
+
+.dashboard-container.collapsed {
+  grid-template-columns: 64px minmax(0, 1fr) 380px;
+}
+
+.inbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.inbox-item {
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.inbox-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.inbox-meta {
+  display: flex;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.sidebar-toggle-shell {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.sidebar-toggle {
+  margin-top: 8px;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel-glass);
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 700;
+  box-shadow: var(--shadow);
+  transition: transform 0.15s ease, box-shadow 0.2s ease;
+}
+
+.sidebar-toggle:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-strong);
+}

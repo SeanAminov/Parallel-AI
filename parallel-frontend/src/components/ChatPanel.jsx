@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import "./ChatPanel.css";
 import ChatBubble from "./ChatBubble";
 
-export default function ChatPanel({ user = { id: "demo-user", name: "You" } }) {
+export default function ChatPanel({ user = { id: "demo-user", name: "You" }, onRoomReady = () => {} }) {
   const [messages, setMessages] = useState([
     { sender: "ai", text: `Hey ${user.name || "there"} — how can I help today?` }
   ]);
@@ -30,6 +30,7 @@ export default function ChatPanel({ user = { id: "demo-user", name: "You" } }) {
       }
       const data = await res.json();
       setRoomId(data.room_id);
+      onRoomReady(data.room_id);
       return data.room_id;
     } catch (err) {
       const msg = err?.message || "Failed to create room";
