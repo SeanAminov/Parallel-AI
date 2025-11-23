@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 
+from fastapi.responses import JSONResponse
+
 from database import SessionLocal, engine, Base
 from models import (
     AgentProfile as AgentORM,
@@ -49,6 +51,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+DEBUG_ERRORS = os.getenv("DEBUG_ERRORS", "false").lower() == "true"
 
 TEAM = [
     {"id": "yug",     "name": "Yug"},
@@ -223,16 +226,58 @@ logger = logging.getLogger(__name__)
 #     allow_headers=["*"],
 # )
 
-allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
-origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+#allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+#origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins="http://localhost:5173",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def debug_cors_and_errors(request: Request, call_next):
+    origin = request.headers.get("origin")
+    logger.info("REQ %s %s Origin=%s", request.method, request.url, origin)
+
+    try:
+        response = await call_next(request)
+    except HTTPException as exc:
+        # Normal HTTP errors (401/403/etc) – still wrap so we can attach CORS
+        logger.warning(
+            "HTTPException %s on %s %s: %s",
+            exc.status_code,
+            request.method,
+            request.url,
+            exc.detail,
+        )
+        response = JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+        )
+    except Exception as exc:
+        # Catch any crash so it doesn't look like random CORS
+        logger.exception("Unhandled error on %s %s", request.method, request.url)
+        if DEBUG_ERRORS:
+            response = JSONResponse(
+                status_code=500,
+                content={"detail": str(exc), "type": exc.__class__.__name__},
+            )
+        else:
+            response = JSONResponse(
+                status_code=500,
+                content={"detail": "Internal server error"},
+            )
+
+    # Force CORS for dev origins even when there was an error
+    if origin in ("http://localhost:5173", "http://localhost"):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Vary"] = "Origin"
+
+    return response
 
 # ============================================================
 # Helpers
@@ -376,14 +421,16 @@ def make_assistant_msg(agent_id: str, agent_name: str, content: str, room_id: Op
         created_at=datetime.utcnow(),
     )
 
-def append_memory_note(room: RoomORM, note: str):
+def append_memory_note(db: Session, room: RoomORM, note: str, agent_id: str = "coordinator"):
+    if "ensure_agent" in globals():
+        ensure_agent(db, agent_id, agent_id.title())
     timestamp = datetime.utcnow().isoformat(timespec="seconds")
     summary = room.memory_summary or ""
     room.memory_summary = summary
     # store as MemoryRecord with low importance
     mem = MemoryORM(
         id=str(uuid.uuid4()),
-        agent_id="coordinator",
+        agent_id=agent_id,
         room_id=room.id,
         content=f"[{timestamp}] {note}",
         importance_score=0.1,
@@ -772,6 +819,7 @@ def add_memory(room_id: str, payload: MemoryQueryRequest, db: Session = Depends(
     room = db.get(RoomORM, room_id)
     if not room:
         raise HTTPException(404, "Room not found")
+    ensure_agent(db, "coordinator", "Coordinator")
     memory = MemoryORM(
         id=str(uuid.uuid4()),
         agent_id="coordinator",
@@ -905,7 +953,7 @@ def ask(room_id: str, payload: AskModeRequest, request: Request, db: Session = D
                 if (upd := summary_update_from(synth)):
                     room.project_summary = upd
                     room.memory_summary = upd
-                    mem = append_memory_note(room, "Coordinator updated summary (from single-ask).")
+                    mem = append_memory_note(db, room, "Coordinator updated summary (from single-ask).")
                     db.add(mem)
                 if (pers := persona_update_from(synth)):
                     agent = db.query(AgentORM).first()
@@ -915,6 +963,7 @@ def ask(room_id: str, payload: AskModeRequest, request: Request, db: Session = D
                         agent.persona_json = existing
                         db.add(agent)
                 if (mem_upd := memory_update_from(synth)):
+                    ensure_agent(db, "coordinator", "Coordinator")
                     mem = MemoryORM(
                         id=str(uuid.uuid4()),
                         agent_id="coordinator",
@@ -959,7 +1008,7 @@ def ask(room_id: str, payload: AskModeRequest, request: Request, db: Session = D
                 if (upd := summary_update_from(synth)):
                     room.project_summary = upd
                     room.memory_summary = upd
-                    mem = append_memory_note(room, "Coordinator updated summary.")
+                    mem = append_memory_note(db, room, "Coordinator updated summary.")
                     db.add(mem)
                 if (pers := persona_update_from(synth)):
                     agent = db.query(AgentORM).first()
@@ -969,6 +1018,7 @@ def ask(room_id: str, payload: AskModeRequest, request: Request, db: Session = D
                         agent.persona_json = existing
                         db.add(agent)
                 if (mem_upd := memory_update_from(synth)):
+                    ensure_agent(db, "coordinator", "Coordinator")
                     mem = MemoryORM(
                         id=str(uuid.uuid4()),
                         agent_id="coordinator",
@@ -993,7 +1043,7 @@ def ask(room_id: str, payload: AskModeRequest, request: Request, db: Session = D
                 if (upd := summary_update_from(synth)):
                     room.project_summary = upd
                     room.memory_summary = upd
-                    mem = append_memory_note(room, "Coordinator updated summary (from single-ask).")
+                    mem = append_memory_note(db, room, "Coordinator updated summary (from single-ask).")
                     db.add(mem)
                 if (pers := persona_update_from(synth)):
                     agent = db.query(AgentORM).first()
@@ -1003,6 +1053,7 @@ def ask(room_id: str, payload: AskModeRequest, request: Request, db: Session = D
                         agent.persona_json = existing
                         db.add(agent)
                 if (mem_upd := memory_update_from(synth)):
+                    ensure_agent(db, "coordinator", "Coordinator")
                     mem = MemoryORM(
                         id=str(uuid.uuid4()),
                         agent_id="coordinator",
@@ -1029,7 +1080,7 @@ def ask(room_id: str, payload: AskModeRequest, request: Request, db: Session = D
                 if (upd := summary_update_from(synth)):
                     room.project_summary = upd
                     room.memory_summary = upd
-                    mem = append_memory_note(room, "Coordinator updated summary.")
+                    mem = append_memory_note(db, room, "Coordinator updated summary.")
                     db.add(mem)
                 if (pers := persona_update_from(synth)):
                     agent = db.query(AgentORM).first()
@@ -1039,6 +1090,7 @@ def ask(room_id: str, payload: AskModeRequest, request: Request, db: Session = D
                         agent.persona_json = existing
                         db.add(agent)
                 if (mem_upd := memory_update_from(synth)):
+                    ensure_agent(db, "coordinator", "Coordinator")
                     mem = MemoryORM(
                         id=str(uuid.uuid4()),
                         agent_id="coordinator",
