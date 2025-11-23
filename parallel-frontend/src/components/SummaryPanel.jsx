@@ -1,24 +1,30 @@
 import "./SummaryPanel.css";
 
+const files = [
+  { name: "Dashboard.jsx", note: "UI layout optimized by Severin" },
+  { name: "ChatPanel.jsx", note: "Added typing indicator + async queue" },
+  { name: "index.jsx", note: "Mounted AppLayout + theme provider" },
+];
+
 export default function SummaryPanel() {
   return (
-    <div className="summary-panel glass">
-      <h2 className="summary-title">Recent Code Summary</h2>
-
-      <div className="file-block">
-        <div className="file-name">Dashboard.jsx</div>
-        <pre className="code-box">UI layout optimized by Severin</pre>
+    <aside className="summary-panel glass">
+      <div className="summary-header">
+        <h2 className="summary-title">Recent Code Summary</h2>
+        <span className="summary-chip">Live</span>
       </div>
 
-      <div className="file-block">
-        <div className="file-name">ChatPanel.jsx</div>
-        <pre className="code-box">Added typing indicator + async queue</pre>
+      <div className="summary-list">
+        {files.map((file) => (
+          <div className="file-block" key={file.name}>
+            <div className="file-row">
+              <div className="file-name">{file.name}</div>
+              <div className="file-tag">updated</div>
+            </div>
+            <pre className="code-box">{file.note}</pre>
+          </div>
+        ))}
       </div>
-
-      <div className="file-block">
-        <div className="file-name">index.jsx</div>
-        <pre className="code-box">Mounted AppLayout + theme provider</pre>
-      </div>
-    </div>
+    </aside>
   );
 }

@@ -1,10 +1,13 @@
 import os
 import uuid
+import asyncio
+import json
 from datetime import datetime
 from typing import Dict, List, Literal, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from config import CLIENTS, OPENAI_MODEL
@@ -41,6 +44,8 @@ class RoomState(BaseModel):
     memory_notes: List[str] = []          # append-only log of important notes
 
 ROOMS: Dict[str, RoomState] = {}
+SUBSCRIBERS: set[asyncio.Queue] = set()
+PROPAGATE_ERRORS = os.getenv("PROPAGATE_ERRORS", "false").lower() == "true"
 
 TEAM = [
     {"id": "yug",     "name": "Yug"},
@@ -160,6 +165,30 @@ def chat(client: OpenAI, messages: List[Dict[str, str]], temperature=0.4) -> str
                 detail = f"OpenAI error (status {status}): {e}"
         raise HTTPException(status_code=502, detail={"provider": "openai", "error": detail})
 
+# ============================================================
+# Event stream (SSE)
+# ============================================================
+
+def publish_event(payload: Dict):
+    """Push events to SSE subscribers when propagation is enabled."""
+    if not PROPAGATE_ERRORS:
+        return
+    for q in list(SUBSCRIBERS):
+        try:
+            q.put_nowait(payload)
+        except asyncio.QueueFull:
+            continue
+
+async def event_generator():
+    queue: asyncio.Queue = asyncio.Queue()
+    SUBSCRIBERS.add(queue)
+    try:
+        while True:
+            data = await queue.get()
+            yield f"data: {json.dumps(data)}\n\n"
+    finally:
+        SUBSCRIBERS.discard(queue)
+
 def run_graph(app_graph, inputs):
     """
     Runs a Spoon graph call whether the SDK returns a sync result or a coroutine.
@@ -177,6 +206,31 @@ def run_graph(app_graph, inputs):
 # ============================================================
 # Routes
 # ============================================================
+
+def publish_status(room_id: str, step: str, meta: Optional[Dict] = None):
+    publish_event({
+        "type": "status",
+        "room_id": room_id,
+        "step": step,
+        "meta": meta or {},
+        "ts": datetime.utcnow().isoformat(),
+    })
+
+def publish_error(room_id: str, message: str, meta: Optional[Dict] = None):
+    publish_event({
+        "type": "error",
+        "room_id": room_id,
+        "message": message,
+        "meta": meta or {},
+        "ts": datetime.utcnow().isoformat(),
+    })
+
+@app.get("/events")
+async def events():
+    """
+    Server-Sent Events stream for status/error propagation.
+    """
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.post("/rooms", response_model=CreateRoomResponse)
 def create_room(payload: CreateRoomRequest):
@@ -205,6 +259,8 @@ def ask(room_id: str, payload: AskModeRequest):
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
 
+    publish_status(room_id, "ask_received", {"mode": payload.mode, "user": payload.user_name})
+
     # 1) store human message
     human = Message(
         id=str(uuid.uuid4()),
@@ -219,97 +275,111 @@ def ask(room_id: str, payload: AskModeRequest):
     sys_ctx = build_system_context(room)
     mode = payload.mode or "self"
 
-    # 2) routing (official Spoon OS vs. local orchestrator)
-    if SPOON_IMPL == "official":
-        graph = build_team_graph()
+    try:
+        # 2) routing (official Spoon OS vs. local orchestrator)
+        if SPOON_IMPL == "official":
+            graph = build_team_graph()
 
-        if mode in ("self", "teammate"):
-            target = payload.target_agent or "yug"
+            if mode in ("self", "teammate"):
+                target = payload.target_agent or "yug"
+                publish_status(room_id, "routing_agent", {"agent": target})
 
-            # ask_one
-            graph.set_entry_point("ask_one")
-            app_graph = graph.compile()
-            res = run_graph(app_graph, {
-                "asker": payload.user_name,
-                "prompt": payload.content,
-                "sys_ctx": sys_ctx,
-                "mode": mode,
-                "target": target,
-            })
-            drafts = res["drafts"]
-            room.messages.append(make_assistant_msg(target, target.title(), drafts[target]))
+                # ask_one
+                graph.set_entry_point("ask_one")
+                app_graph = graph.compile()
+                res = run_graph(app_graph, {
+                    "asker": payload.user_name,
+                    "prompt": payload.content,
+                    "sys_ctx": sys_ctx,
+                    "mode": mode,
+                    "target": target,
+                })
+                drafts = res["drafts"]
+                room.messages.append(make_assistant_msg(target, target.title(), drafts[target]))
+                publish_status(room_id, "agent_reply", {"agent": target})
 
-            # synthesize
-            graph.set_entry_point("synthesize")
-            app_graph = graph.compile()
-            synth = run_graph(app_graph, {
-                "asker": payload.user_name,
-                "prompt": payload.content,
-                "sys_ctx": sys_ctx,
-                "drafts": drafts
-            })["synthesis"]
+                # synthesize
+                graph.set_entry_point("synthesize")
+                app_graph = graph.compile()
+                synth = run_graph(app_graph, {
+                    "asker": payload.user_name,
+                    "prompt": payload.content,
+                    "sys_ctx": sys_ctx,
+                    "drafts": drafts
+                })["synthesis"]
 
-            if (upd := summary_update_from(synth)):
-                room.project_summary = upd
-                room.memory_summary = upd
-                append_memory_note(room, "Coordinator updated summary (from single-ask).")
+                if (upd := summary_update_from(synth)):
+                    room.project_summary = upd
+                    room.memory_summary = upd
+                    append_memory_note(room, "Coordinator updated summary (from single-ask).")
 
-        else:  # mode == "team"
-            # ask_team
-            graph.set_entry_point("ask_team")
-            app_graph = graph.compile()
-            res = run_graph(app_graph, {
-                "asker": payload.user_name,
-                "prompt": payload.content,
-                "sys_ctx": sys_ctx,
-            })
-            drafts: Dict[str, str] = res["drafts"]
+            else:  # mode == "team"
+                publish_status(room_id, "team_fanout_start", {"agents": [m["id"] for m in TEAM]})
+                # ask_team
+                graph.set_entry_point("ask_team")
+                app_graph = graph.compile()
+                res = run_graph(app_graph, {
+                    "asker": payload.user_name,
+                    "prompt": payload.content,
+                    "sys_ctx": sys_ctx,
+                })
+                drafts: Dict[str, str] = res["drafts"]
 
-            for member, text in drafts.items():
-                room.messages.append(make_assistant_msg(member, member.title(), text))
+                for member, text in drafts.items():
+                    room.messages.append(make_assistant_msg(member, member.title(), text))
 
-            # synthesize
-            graph.set_entry_point("synthesize")
-            app_graph = graph.compile()
-            synth = run_graph(app_graph, {
-                "asker": payload.user_name,
-                "prompt": payload.content,
-                "sys_ctx": sys_ctx,
-                "drafts": drafts
-            })["synthesis"]
+                # synthesize
+                publish_status(room_id, "synthesizing", {"agent": "Coordinator"})
+                graph.set_entry_point("synthesize")
+                app_graph = graph.compile()
+                synth = run_graph(app_graph, {
+                    "asker": payload.user_name,
+                    "prompt": payload.content,
+                    "sys_ctx": sys_ctx,
+                    "drafts": drafts
+                })["synthesis"]
 
-            room.messages.append(make_assistant_msg("coordinator", "Coordinator", synth))
+                room.messages.append(make_assistant_msg("coordinator", "Coordinator", synth))
+                publish_status(room_id, "synthesis_complete", {"agent": "Coordinator"})
 
-            if (upd := summary_update_from(synth)):
-                room.project_summary = upd
-                room.memory_summary = upd
-                append_memory_note(room, "Coordinator updated summary.")
+                if (upd := summary_update_from(synth)):
+                    room.project_summary = upd
+                    room.memory_summary = upd
+                    append_memory_note(room, "Coordinator updated summary.")
 
-    else:
-        # Local orchestrator (Windows friendly)
-        if mode in ("self", "teammate"):
-            agent_id = payload.target_agent or "yug"
-            drafts = ask_one(payload.user_name, payload.content, sys_ctx, agent_id)
-            room.messages.append(make_assistant_msg(agent_id, agent_id.title(), drafts[agent_id]))
+        else:
+            # Local orchestrator (Windows friendly)
+            if mode in ("self", "teammate"):
+                agent_id = payload.target_agent or "yug"
+                publish_status(room_id, "routing_agent", {"agent": agent_id})
+                drafts = ask_one(payload.user_name, payload.content, sys_ctx, agent_id)
+                room.messages.append(make_assistant_msg(agent_id, agent_id.title(), drafts[agent_id]))
+                publish_status(room_id, "agent_reply", {"agent": agent_id})
 
-            synth = synthesize(payload.user_name, payload.content, sys_ctx, drafts)
-            if (upd := summary_update_from(synth)):
-                room.project_summary = upd
-                room.memory_summary = upd
-                append_memory_note(room, "Coordinator updated summary (from single-ask).")
+                synth = synthesize(payload.user_name, payload.content, sys_ctx, drafts)
+                if (upd := summary_update_from(synth)):
+                    room.project_summary = upd
+                    room.memory_summary = upd
+                    append_memory_note(room, "Coordinator updated summary (from single-ask).")
 
-        else:  # mode == "team"
-            drafts = ask_team(payload.user_name, payload.content, sys_ctx)
-            for member, text in drafts.items():
-                room.messages.append(make_assistant_msg(member, member.title(), text))
+            else:  # mode == "team"
+                publish_status(room_id, "team_fanout_start", {"agents": [m["id"] for m in TEAM]})
+                drafts = ask_team(payload.user_name, payload.content, sys_ctx)
+                for member, text in drafts.items():
+                    room.messages.append(make_assistant_msg(member, member.title(), text))
 
-            synth = synthesize(payload.user_name, payload.content, sys_ctx, drafts)
-            room.messages.append(make_assistant_msg("coordinator", "Coordinator", synth))
+                publish_status(room_id, "synthesizing", {"agent": "Coordinator"})
+                synth = synthesize(payload.user_name, payload.content, sys_ctx, drafts)
+                room.messages.append(make_assistant_msg("coordinator", "Coordinator", synth))
+                publish_status(room_id, "synthesis_complete", {"agent": "Coordinator"})
 
-            if (upd := summary_update_from(synth)):
-                room.project_summary = upd
-                room.memory_summary = upd
-                append_memory_note(room, "Coordinator updated summary.")
+                if (upd := summary_update_from(synth)):
+                    room.project_summary = upd
+                    room.memory_summary = upd
+                    append_memory_note(room, "Coordinator updated summary.")
+    except Exception as exc:
+        publish_error(room_id, str(exc), {"mode": mode})
+        raise
 
     return RoomResponse(
         room_id=room.id,
