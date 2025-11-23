@@ -155,23 +155,33 @@ export default function Dashboard() {
   const containerClass = sidebarOpen ? "dashboard-container" : "dashboard-container collapsed";
 
   return (
-    <div className={containerClass}>
-      {sidebarOpen ? (
-        <Sidebar
-          active={activeTool}
-          onSelect={setActiveTool}
-          onToggle={() => setSidebarOpen(false)}
-          onLogout={handleLogout}
-        />
-      ) : (
-        <div className="sidebar-toggle-shell">
-          <button className="sidebar-toggle" onClick={() => setSidebarOpen(true)} aria-label="Expand sidebar">
-            ‹›
-          </button>
-        </div>
-      )}
+   <div className={containerClass}>
+  {sidebarOpen ? (
+    <Sidebar
+      active={activeTool}
+      onSelect={setActiveTool}
+      onToggle={() => setSidebarOpen(false)}
+      onLogout={handleLogout}
+    />
+  ) : (
+    <div className="sidebar-toggle-shell">
+      <button className="sidebar-toggle" onClick={() => setSidebarOpen(true)} aria-label="Expand sidebar">
+        ‹›
+      </button>
+    </div>
+  )}
+
+  {/* 👇 Hide Chat and Right Panel when Manager is active */}
+  {activeTool === "Manager" ? (
+    <div style={{ gridColumn: "span 2", width: "100%" }}>
+      <Manager currentUser={user} />
+    </div>
+  ) : (
+    <>
       <ChatPanel user={user} onRoomReady={setRoomId} />
       {renderRight()}
-    </div>
+    </>
+  )}
+</div>
   );
 }

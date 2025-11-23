@@ -1399,3 +1399,127 @@ def google_callback(code: str, db: Session = Depends(get_db)):
         samesite="lax",
     )
     return response
+
+# ============================================================
+# Project Manager Schemas
+# ============================================================
+
+class TaskIn(BaseModel):
+    title: str
+    description: Optional[str] = ""
+    assignee_id: str
+
+class TaskOut(BaseModel):
+    id: str
+    title: str
+    description: str
+    assignee_id: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class NotificationOut(BaseModel):
+    id: str
+    user_id: str
+    type: str
+    title: str
+    message: str
+    task_id: Optional[str]
+    created_at: datetime
+    is_read: str
+
+    class Config:
+        from_attributes = True
+
+# ============================================================
+# Project Manager Routes
+# ============================================================
+
+@app.get("/team")
+def get_team(db: Session = Depends(get_db)):
+    users = db.query(UserORM).all()
+    return {
+        "members": [
+            {
+                "id": u.id,
+                "name": u.name,
+                "email": u.email,
+                "roles": ["Coordinator" if u.email.endswith("@parallel.local") else "Member"],
+                "status": "active",
+            }
+            for u in users
+        ]
+    }
+
+@app.get("/tasks", response_model=List[TaskOut])
+def list_tasks(db: Session = Depends(get_db)):
+    return db.query(models.Task).order_by(models.Task.created_at.desc()).all()
+
+@app.post("/tasks", response_model=TaskOut)
+def create_task(payload: TaskIn, db: Session = Depends(get_db)):
+    assignee = db.get(UserORM, payload.assignee_id)
+    if not assignee:
+        raise HTTPException(404, "Assignee not found")
+
+    task = models.Task(
+        id=str(uuid.uuid4()),
+        title=payload.title,
+        description=payload.description or "",
+        assignee_id=payload.assignee_id,
+        status="new",
+    )
+    db.add(task)
+
+    notif = models.Notification(
+        id=str(uuid.uuid4()),
+        user_id=payload.assignee_id,
+        type="task_assigned",
+        title=f"New Task: {payload.title}",
+        message=payload.description or "",
+        task_id=task.id,
+    )
+    db.add(notif)
+    db.commit()
+    db.refresh(task)
+    return task
+
+@app.patch("/tasks/{task_id}", response_model=TaskOut)
+def update_task_status(task_id: str, data: Dict, db: Session = Depends(get_db)):
+    task = db.get(models.Task, task_id)
+    if not task:
+        raise HTTPException(404, "Task not found")
+    new_status = data.get("status")
+    if new_status:
+        task.status = new_status
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return task
+
+@app.get("/users/{user_id}/notifications", response_model=List[NotificationOut])
+def get_notifications(user_id: str, db: Session = Depends(get_db)):
+    return (
+        db.query(models.Notification)
+        .filter(models.Notification.user_id == user_id)
+        .order_by(models.Notification.created_at.desc())
+        .all()
+    )
+
+@app.post("/users/{user_id}/notifications")
+def add_notification(user_id: str, data: Dict, db: Session = Depends(get_db)):
+    notif = models.Notification(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        type=data.get("type", "task_assigned"),
+        title=data.get("title", "Notification"),
+        message=data.get("message", ""),
+        task_id=data.get("task_id"),
+    )
+    db.add(notif)
+    db.commit()
+    return {"ok": True}
+
+

@@ -118,3 +118,30 @@ class MemoryRecord(Base):
 
     agent = relationship("AgentProfile", back_populates="memories")
     room = relationship("Room", back_populates="memories")
+
+class Task(Base):
+    __tablename__ = "tasks"
+    id = Column(String, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, default="")
+    assignee_id = Column(String, ForeignKey("users.id"), nullable=False)
+    status = Column(String, default="new")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    assignee = relationship("User")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    type = Column(String, default="task_assigned")
+    title = Column(String, nullable=False)
+    message = Column(Text, default="")
+    task_id = Column(String, ForeignKey("tasks.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    is_read = Column(String, default="false")
+
+    user = relationship("User")
+    task = relationship("Task")
