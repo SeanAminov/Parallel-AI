@@ -55,3 +55,11 @@
   --shadow: 0 4px 22px rgba(0,0,0,0.45);
   --shadow-strong: 0 8px 32px rgba(0,0,0,0.5);
 }
+
+:root {
+  --logo-filter: brightness(0); /* black in light mode */
+}
+
+[data-theme="dark"] {
+  --logo-filter: brightness(200%); /* white in dark mode */
+}

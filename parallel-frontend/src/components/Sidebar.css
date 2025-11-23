@@ -1,49 +1,136 @@
+/* ===============================
+   SIDEBAR — Parallel OS
+   VisionOS Premium Aesthetic
+==================================*/
+
 .sidebar {
-  width: 220px;
-  padding: 28px;
-  border-radius: var(--radius);
-  background: var(--sidebar-glass);
-  backdrop-filter: var(--backdrop);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
+  width: 240px;
+  height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+
+  background: var(--panel-glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 26px 22px;
+
+  backdrop-filter: var(--backdrop);
+  box-shadow: var(--shadow);
 }
 
-.sidebar .logo {
-  font-size: 22px;
-  font-weight: 800;
-  color: var(--text);
+
+/* ----------------------------------
+   LOGO HEADER — PERFECT CENTER
+---------------------------------- */
+
+.sidebar-header {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  padding: 0;
+  margin-bottom: 30px;
+
+  /* No background so your logo blends naturally */
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
-.menu {
-  margin-top: 30px;
+/* Center the SVG pixel-perfect */
+.sidebar-logo {
+  width: 150px;    /* sizing that looks best */
+  height: auto;
+  display: block;
+  margin: 0 auto;
+  padding: 0;
+
+  /* Light holographic depth without changing color */
+  filter: drop-shadow(0 1px 4px rgba(0,0,0,0.12));
+
+  animation: logoFade 0.7s ease forwards;
+  transition: transform 0.24s ease, filter 0.24s ease;
+}
+
+/* Hover lift (no color shift) */
+.sidebar-logo:hover {
+  transform: scale(1.04);
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.18));
+}
+
+/* Logo appear animation */
+@keyframes logoFade {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+    filter: blur(6px);
+  }
+  60% {
+    opacity: 0.6;
+    filter: blur(1px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+
+/* ----------------------------------
+   NAVIGATION LINKS
+---------------------------------- */
+
+.sidebar-links {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  margin-bottom: 40px;
 }
 
-.menu-item {
+.sidebar-links p {
   font-size: 15px;
+  padding: 6px 6px;
+  border-radius: 10px;
+
   color: var(--text-secondary);
   cursor: pointer;
-  padding: 8px 0;
-  transition: 0.15s;
+  transition: 0.2s ease;
 }
 
-.menu-item:hover {
+/* Hover effect: subtle and clean */
+.sidebar-links p:hover {
   color: var(--accent);
+  background: var(--accent-soft);
   transform: translateX(4px);
 }
 
+
+/* ----------------------------------
+   THEME TOGGLE BUTTON
+---------------------------------- */
+
 .theme-toggle-btn {
-  margin-top: 20px;
-  padding: 12px;
-  background: var(--accent);
-  border-radius: var(--radius-sm);
-  border: none;
+  padding: 12px 16px;
+  width: 100%;
+
+  font-size: 14px;
   font-weight: 600;
+
+  background: var(--accent);
+  color: black;
+
+  border: none;
+  border-radius: 14px;
   cursor: pointer;
-  color: #000;
+
+  transition: 0.2s ease;
+}
+
+.theme-toggle-btn:hover {
+  background: var(--text);
+  color: var(--bg);
 }
