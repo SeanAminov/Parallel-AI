@@ -8,6 +8,9 @@ python-dotenv>=1.0.1,<2
 # Spoon SDK requires openai >= 1.70
 openai>=1.70,<2
 
+# Postgres driver
+psycopg2-binary>=2.9
+
 # Graph orchestration used by spoon_official.py
 langgraph>=0.2.40
 

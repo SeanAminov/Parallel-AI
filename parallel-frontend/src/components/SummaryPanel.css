@@ -26,6 +26,12 @@
   font-weight: 700;
 }
 
+.summary-subtitle {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
 .summary-chip {
   padding: 6px 10px;
   border-radius: 999px;
@@ -78,6 +84,28 @@
   font-size: 13px;
   white-space: pre-wrap;
   border: 1px solid var(--border);
+}
+
+.activity-feed {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  height: 180px;
+  overflow-y: auto;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.activity-line {
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.activity-line:last-child {
+  border-bottom: none;
 }
 
 @media (max-width: 1180px) {

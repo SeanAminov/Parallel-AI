@@ -4,7 +4,7 @@ import ChatBubble from "./ChatBubble";
 
 export default function ChatPanel({ user = { id: "demo-user", name: "You" } }) {
   const [messages, setMessages] = useState([
-    { sender: "ai", text: "Hey Yug — how can I help today?" }
+    { sender: "ai", text: `Hey ${user.name || "there"} — how can I help today?` }
   ]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
@@ -20,9 +20,14 @@ export default function ChatPanel({ user = { id: "demo-user", name: "You" } }) {
       const res = await fetch(`${apiBase}/rooms`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ room_name: "Parallel Demo" }),
       });
-      if (!res.ok) throw new Error(`Room creation failed (${res.status})`);
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("Room create failed", res.status, text);
+        throw new Error(`Room creation failed (${res.status})`);
+      }
       const data = await res.json();
       setRoomId(data.room_id);
       return data.room_id;
@@ -49,6 +54,7 @@ export default function ChatPanel({ user = { id: "demo-user", name: "You" } }) {
       const res = await fetch(`${apiBase}/rooms/${room}/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           user_id: user.id,
           user_name: user.name,
@@ -60,6 +66,7 @@ export default function ChatPanel({ user = { id: "demo-user", name: "You" } }) {
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
         const msg = detail?.detail || `Request failed (${res.status})`;
+        console.error("Ask failed", res.status, msg);
         throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
       }
 

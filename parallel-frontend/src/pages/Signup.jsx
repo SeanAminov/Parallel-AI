@@ -19,6 +19,7 @@ export default function Signup({ goLogin, goDashboard }) {
     setLoading(true);
     setStatus("");
     try {
+      console.log("Signup: sending request", { apiBase, email });
       const res = await fetch(`${apiBase}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -26,13 +27,16 @@ export default function Signup({ goLogin, goDashboard }) {
         body: JSON.stringify({ name, email, password }),
       });
       if (!res.ok) {
-        setStatus("Signup failed.");
+        const text = await res.text();
+        console.error("Signup failed", res.status, text);
+        setStatus(`Signup failed (${res.status}).`);
       } else {
         setStatus("Account created.");
         goDashboard();
       }
     } catch (err) {
-      setStatus("Signup failed.");
+      console.error("Signup error", err);
+      setStatus("Signup failed. See console.");
     } finally {
       setLoading(false);
     }

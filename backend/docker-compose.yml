@@ -1,4 +1,13 @@
 services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: parallel
+      POSTGRES_PASSWORD: parallel
+      POSTGRES_DB: parallel
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
   backend:
     build:
       context: .
@@ -9,8 +18,14 @@ services:
       - .env
     environment:
       - SPOON_IMPL=official
+      - DATABASE_URL=postgresql+psycopg2://parallel:parallel@db:5432/parallel
     ports:
       - "8000:8000"
     volumes:
       - ./:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      - db
+
+volumes:
+  db-data:

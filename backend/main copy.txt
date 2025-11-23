@@ -252,14 +252,15 @@ def verify_password(plain: str, hashed: str) -> bool:
     except Exception:
         return False
 
+
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)   
+    return pwd_context.hash(password)
+
+
 
 def create_access_token(data: Dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
-    expire = datetime.utcnow() + (
-        expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    )
+    expire = datetime.now(datetime.timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -283,8 +284,6 @@ def require_current_user(request: Request, db: Session) -> UserORM:
     if not user:
         raise HTTPException(401, "Not authenticated")
     return user
-
-
 
 
 def get_or_create_org_for_user(db: Session, user: UserORM) -> OrganizationORM:
@@ -1092,21 +1091,15 @@ def ask(room_id: str, payload: AskModeRequest, request: Request, db: Session = D
     return room_to_response(db, room)
 
 @app.get("/rooms/{room_id}/memory")
-def get_memory(room_id: str, db: Session = Depends(get_db)):
-    room = db.get(RoomORM, room_id)
+def get_memory(room_id: str):
+    room = ROOMS.get(room_id)
     if not room:
         raise HTTPException(404, "Room not found")
-    memories = (
-        db.query(MemoryORM)
-        .filter(MemoryORM.room_id == room_id)
-        .order_by(MemoryORM.created_at.desc())
-        .limit(20)
-        .all()
-    )
+    # Return summary + last 20 notes
     return {
         "memory_summary": room.memory_summary,
-        "notes": [m.content for m in memories],
-        "count": len(memories),
+        "notes": room.memory_notes[-20:],
+        "count": len(room.memory_notes),
     }
 
 @app.post("/rooms/{room_id}/memory/query")
@@ -1116,12 +1109,7 @@ def query_memory(room_id: str, payload: MemoryQueryRequest):
     if not room:
         db.close()
         raise HTTPException(404, "Room not found")
-    memories = (
-        db.query(MemoryORM)
-        .filter(MemoryORM.room_id == room_id)
-        .order_by(MemoryORM.created_at.desc())
-        .all()
-    )
+    memories = db.query(MemoryORM).filter(MemoryORM.room_id == room_id).order_by(MemoryORM.created_at.desc()).all()
     context_block = "\n".join(m.content for m in memories[-200:])
     context = (room.memory_summary or "") + "\n\n" + context_block
     msgs = [

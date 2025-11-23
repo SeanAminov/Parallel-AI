@@ -6,7 +6,7 @@ import SummaryPanel from "../components/SummaryPanel";
 import TeamPanel from "../components/TeamPanel";
 import { GitTextEditorPanel } from "../features/ide/GitTextEditorPanel";
 
-function TeamView() {
+function TeamView({ user, statuses }) {
   return (
     <div className="chat-wrapper glass">
       <div className="panel-head">
@@ -15,7 +15,7 @@ function TeamView() {
           <h2>Team activity</h2>
         </div>
       </div>
-      <TeamPanel />
+      <TeamPanel user={user} statuses={statuses} />
       <p className="subhead">Updates stream here when Team is selected.</p>
     </div>
   );
@@ -43,6 +43,8 @@ export default function Dashboard() {
   const [activeTool, setActiveTool] = useState("Team");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [user, setUser] = useState({ id: "demo-user", name: "You" });
+  const [activityLog, setActivityLog] = useState([]);
+  const [teamStatuses, setTeamStatuses] = useState([]);
   const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
   useEffect(() => {
@@ -60,11 +62,26 @@ export default function Dashboard() {
     fetchMe();
   }, [apiBase]);
 
+  useEffect(() => {
+    const label = activeTool === "IDE" ? "Development" : activeTool === "Inbox" ? "Inbox review" : activeTool === "Team" ? "Team activity" : "In chat";
+    const entry = {
+      id: `${Date.now()}`,
+      state: label,
+      detail: `Switched to ${activeTool}`,
+      at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      name: user.name || "You",
+    };
+    setActivityLog((prev) => [entry, ...prev].slice(0, 6));
+    setTeamStatuses([
+      { name: user.name || "You", role: label, state: "active" },
+    ]);
+  }, [activeTool, user.name]);
+
   const renderRight = () => {
-    if (activeTool === "Team") return <TeamView />;
+    if (activeTool === "Team") return <TeamView user={user} statuses={teamStatuses} />;
     if (activeTool === "Inbox") return <InboxView />;
     if (activeTool === "IDE") return <IdeView />;
-    return <SummaryPanel user={user} activeTool={activeTool} />;
+    return <SummaryPanel user={user} activeTool={activeTool} activityLog={activityLog} />;
   };
 
   return (
@@ -76,7 +93,7 @@ export default function Dashboard() {
         </button>
       )}
       <ChatPanel user={user} />
-      {renderRight()}
+      <SummaryPanel user={user} activeTool={activeTool} activityLog={activityLog} />
     </div>
   );
 }
