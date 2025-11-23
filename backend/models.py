@@ -124,7 +124,7 @@ class Task(Base):
     id = Column(String, primary_key=True, index=True)
     title = Column(String, nullable=False)
     description = Column(Text, default="")
-    assignee_id = Column(String, ForeignKey("users.id"), nullable=False)
+    assignee_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)  # ✅ add index
     status = Column(String, default="new")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

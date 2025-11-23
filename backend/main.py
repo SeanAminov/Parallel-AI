@@ -2,6 +2,9 @@ import os
 import uuid
 import asyncio
 import json
+# main.py (near your other imports)
+import models  # ✅ NEW: ensures Task/Notification are registered with Base
+
 from datetime import datetime, timedelta
 from typing import Dict, List, Literal, Optional, Tuple
 import logging
@@ -1437,6 +1440,16 @@ class NotificationOut(BaseModel):
 # ============================================================
 # Project Manager Routes
 # ============================================================
+
+@app.get("/users/{user_id}/tasks", response_model=List[TaskOut])
+def list_user_tasks(user_id: str, db: Session = Depends(get_db)):
+    """List tasks assigned to a given user, newest first."""
+    return (
+        db.query(models.Task)
+        .filter(models.Task.assignee_id == user_id)
+        .order_by(models.Task.created_at.desc())
+        .all()
+    )
 
 @app.get("/team")
 def get_team(db: Session = Depends(get_db)):

@@ -78,4 +78,18 @@
   resize: horizontal;    /* allows dragging to resize */
 }
 
+/* permissions UI (placeholder) */
+.perm-row {
+  display: flex;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+}
+
+.perm-row input {
+  margin-right: 6px;
+}
+
+
 
