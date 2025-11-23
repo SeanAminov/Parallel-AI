@@ -4,7 +4,7 @@ from typing import List, Optional
 from sqlalchemy import Column, DateTime, Float, ForeignKey, String, Text, JSON
 from sqlalchemy.orm import relationship
 
-from .database import Base
+from database import Base
 
 
 class User(Base):
