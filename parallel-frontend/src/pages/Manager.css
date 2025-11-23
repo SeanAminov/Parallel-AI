@@ -1,11 +1,14 @@
 .manager-wrap {
   display: grid;
-  grid-template-columns: 340px minmax(0,1fr);
-  gap: 20px;
-  height: 100vh;
-  padding: 20px;
+  grid-template-columns: minmax(260px, 380px) 1fr;
+  gap: 16px;
+  height: calc(100vh - 40px); /* fits nicely under header */
+  padding: 10px 16px;
   background: var(--bg-pearl);
+  overflow: hidden; /* prevents scrollbars */
+  align-items: stretch;
 }
+
 
 .manager-card, .manager-pane {
   background: var(--panel-glass);
@@ -15,7 +18,13 @@
   box-shadow: var(--shadow);
 }
 
-.manager-card { padding: 16px; }
+.manager-card {
+  resize: horizontal;
+  overflow: auto;
+  min-width: 260px;
+  max-width: 480px;
+}
+
 
 .manager-heading {
   display: flex; align-items: center; justify-content: space-between;
@@ -55,3 +64,18 @@
 .task-col-title { font-weight: 600; }
 .task-col-status { font-size: 12px; color: var(--text-secondary); }
 .task-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* === Manager right-side panel (Tasks) === */
+.manager-pane {
+  background: var(--panel-glass);
+  backdrop-filter: var(--backdrop);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  min-width: 600px;      /* wider default width */
+  max-width: 100%;
+  overflow: auto;
+  resize: horizontal;    /* allows dragging to resize */
+}
+
+
