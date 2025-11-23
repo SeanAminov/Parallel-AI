@@ -2,14 +2,16 @@ import os
 import uuid
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Literal, Optional
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from jose import jwt, JWTError
+from passlib.context import CryptContext
 
 from database import SessionLocal, engine, Base
 from models import (
@@ -20,6 +22,8 @@ from models import (
     Organization as OrganizationORM,
     Room as RoomORM,
     User as UserORM,
+    UserCredential as UserCredentialORM,
+    UserSentiment as UserSentimentORM,
 )
 
 from config import CLIENTS, OPENAI_MODEL
@@ -36,6 +40,10 @@ else:
 
 SUBSCRIBERS: set[asyncio.Queue] = set()
 PROPAGATE_ERRORS = os.getenv("PROPAGATE_ERRORS", "false").lower() == "true"
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 TEAM = [
     {"id": "yug",     "name": "Yug"},
@@ -91,11 +99,32 @@ class MemoryQueryRequest(BaseModel):
 class CreateUserRequest(BaseModel):
     email: str
     name: str
+    password: str
 
 class UserOut(BaseModel):
     id: str
     email: str
     name: str
+    preferences: Dict = {}
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class AuthLoginRequest(BaseModel):
+    email: str
+    password: str
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+class PreferencesUpdate(BaseModel):
+    preferences: Dict
+
+class SentimentOut(BaseModel):
+    score: float
+    note: str
     created_at: datetime
 
     class Config:
@@ -176,9 +205,11 @@ class MemoryOut(BaseModel):
 
 app = FastAPI(title="Parallel Workspace with Shared Memory")
 
+# CORS (must not use "*" when allow_credentials=True)
+origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # open for local dev
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -195,6 +226,38 @@ def get_db():
     finally:
         db.close()
 
+
+def verify_password(plain: str, hashed: str) -> bool:
+    try:
+        return pwd_context.verify(plain, hashed)
+    except Exception:
+        return False
+
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def create_access_token(data: Dict, expires_delta: Optional[timedelta] = None) -> str:
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def get_current_user(request: Request, db: Session) -> Optional[UserORM]:
+    token = request.cookies.get("access_token")
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if not user_id:
+            return None
+    except JWTError:
+        return None
+    return db.get(UserORM, user_id)
+
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
@@ -204,8 +267,14 @@ def seed_demo(db: Session):
     existing = db.query(UserORM).first()
     if existing:
         return
-    demo_user = UserORM(id=str(uuid.uuid4()), email="demo@parallel.local", name="Demo User")
+    demo_user = UserORM(id=str(uuid.uuid4()), email="demo@parallel.local", name="Demo User", preferences={"tone":"calm"})
     db.add(demo_user)
+    cred = UserCredentialORM(
+        user_id=demo_user.id,
+        password_hash=hash_password("parallel-demo"),
+        created_at=datetime.utcnow(),
+    )
+    db.add(cred)
     db.flush()
     org = OrganizationORM(id=str(uuid.uuid4()), name="Demo Org", owner_user_id=demo_user.id)
     db.add(org)
@@ -402,14 +471,54 @@ async def events():
 
 @app.post("/users", response_model=UserOut)
 def create_user(payload: CreateUserRequest, db: Session = Depends(get_db)):
+    exists = db.query(UserORM).filter(UserORM.email == payload.email).first()
+    if exists:
+        raise HTTPException(400, "Email already registered")
     user = UserORM(
         id=str(uuid.uuid4()),
         email=payload.email,
         name=payload.name,
         created_at=datetime.utcnow(),
     )
+    cred = UserCredentialORM(
+        user_id=user.id,
+        password_hash=hash_password(payload.password),
+        created_at=datetime.utcnow(),
+    )
     db.add(user)
+    db.add(cred)
     db.commit()
+    return user
+
+@app.post("/auth/register", response_model=UserOut)
+def register(payload: CreateUserRequest, response: Response, db: Session = Depends(get_db)):
+    user = create_user(payload, db)
+    token = create_access_token({"sub": user.id})
+    response.set_cookie("access_token", token, httponly=True, secure=False, samesite="lax")
+    return user
+
+@app.post("/auth/login", response_model=TokenResponse)
+def login(payload: AuthLoginRequest, response: Response, db: Session = Depends(get_db)):
+    user = db.query(UserORM).filter(UserORM.email == payload.email).first()
+    if not user:
+        raise HTTPException(401, "Invalid credentials")
+    cred = db.get(UserCredentialORM, user.id)
+    if not cred or not verify_password(payload.password, cred.password_hash):
+        raise HTTPException(401, "Invalid credentials")
+    token = create_access_token({"sub": user.id})
+    response.set_cookie("access_token", token, httponly=True, secure=False, samesite="lax")
+    return TokenResponse(access_token=token)
+
+@app.post("/auth/logout")
+def logout(response: Response):
+    response.delete_cookie("access_token")
+    return {"ok": True}
+
+@app.get("/me", response_model=UserOut)
+def me(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user:
+        raise HTTPException(401, "Not authenticated")
     return user
 
 @app.post("/organizations", response_model=OrgOut)
@@ -531,6 +640,31 @@ def list_memories(room_id: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "Room not found")
     memories = db.query(MemoryORM).filter(MemoryORM.room_id == room_id).all()
     return memories
+
+@app.get("/users/{user_id}/sentiments", response_model=List[SentimentOut])
+def list_sentiments(user_id: str, db: Session = Depends(get_db)):
+    user = db.get(UserORM, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    sentiments = (
+        db.query(UserSentimentORM)
+        .filter(UserSentimentORM.user_id == user_id)
+        .order_by(UserSentimentORM.created_at.desc())
+        .all()
+    )
+    return sentiments
+
+@app.patch("/me/preferences", response_model=UserOut)
+def update_preferences(payload: PreferencesUpdate, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user:
+        raise HTTPException(401, "Not authenticated")
+    prefs = payload.preferences or {}
+    user.preferences = prefs
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
 
 @app.post("/rooms", response_model=CreateRoomResponse)
 def create_room(payload: CreateRoomRequest, db: Session = Depends(get_db)):
@@ -687,6 +821,18 @@ def ask(room_id: str, payload: AskModeRequest, db: Session = Depends(get_db)):
                     db.add(mem)
         db.add(room)
         db.commit()
+
+        # sentiment stub: record neutral sentiment for now
+        if payload.user_id:
+            sentiment = UserSentimentORM(
+                id=str(uuid.uuid4()),
+                user_id=payload.user_id,
+                score=0.0,
+                note="stub",
+                created_at=datetime.utcnow(),
+            )
+            db.add(sentiment)
+            db.commit()
     except Exception as exc:
         publish_error(room_id, str(exc), {"mode": mode})
         raise

@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import "./ChatPanel.css";
 import ChatBubble from "./ChatBubble";
 
-export default function ChatPanel() {
+export default function ChatPanel({ user = { id: "demo-user", name: "You" } }) {
   const [messages, setMessages] = useState([
     { sender: "ai", text: "Hey Yug — how can I help today?" }
   ]);
@@ -50,8 +50,8 @@ export default function ChatPanel() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_id: "demo-user",
-          user_name: "Demo User",
+          user_id: user.id,
+          user_name: user.name,
           content: userMessage.text,
           mode: "team",
         }),

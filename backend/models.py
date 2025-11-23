@@ -4,7 +4,7 @@ from typing import List, Optional
 from sqlalchemy import Column, DateTime, Float, ForeignKey, String, Text, JSON
 from sqlalchemy.orm import relationship
 
-from .database import Base
+from database import Base
 
 
 class User(Base):
@@ -12,10 +12,33 @@ class User(Base):
     id = Column(String, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     name = Column(String, nullable=False)
+    preferences = Column(JSON, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     agents = relationship("AgentProfile", back_populates="owner")
     inbox_tasks = relationship("InboxTask", back_populates="user")
+    credentials = relationship("UserCredential", back_populates="user", uselist=False)
+    sentiments = relationship("UserSentiment", back_populates="user")
+
+
+class UserCredential(Base):
+    __tablename__ = "user_credentials"
+    user_id = Column(String, ForeignKey("users.id"), primary_key=True)
+    password_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="credentials")
+
+
+class UserSentiment(Base):
+    __tablename__ = "user_sentiments"
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    score = Column(Float, default=0.0)
+    note = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="sentiments")
 
 
 class Organization(Base):

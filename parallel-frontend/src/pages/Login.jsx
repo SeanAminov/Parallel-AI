@@ -1,7 +1,46 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
 import "./Auth.css";
 
 export default function Login({ goSignup, goForgot, goDashboard }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+
+  const submit = async () => {
+    if (!email || !password) {
+      setStatus("Enter email and password.");
+      return;
+    }
+    setLoading(true);
+    setStatus("");
+    try {
+      const res = await fetch(`${apiBase}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) {
+        setStatus("Invalid credentials.");
+      } else {
+        setStatus("Signed in.");
+        goDashboard();
+      }
+    } catch (err) {
+      setStatus("Login failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onKey = (e) => {
+    if (e.key === "Enter") submit();
+  };
+
   return (
     <div className="auth-container">
       <motion.div
@@ -12,11 +51,27 @@ export default function Login({ goSignup, goForgot, goDashboard }) {
         <h2 className="auth-title">Welcome Back</h2>
         <p className="auth-subtitle">Sign in to your workspace</p>
 
-        <input className="auth-input" placeholder="Email" type="email" />
-        <input className="auth-input" placeholder="Password" type="password" />
+        <input
+          className="auth-input"
+          placeholder="Email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={onKey}
+        />
+        <input
+          className="auth-input"
+          placeholder="Password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={onKey}
+        />
 
-        <button className="auth-button" onClick={goDashboard}>
-          Sign In
+        {status && <div className="auth-status">{status}</div>}
+
+        <button className="auth-button" onClick={submit} disabled={loading}>
+          {loading ? "Signing in..." : "Sign In"}
         </button>
 
         <p className="auth-link" onClick={goForgot}>

@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import "./Landing.css";
 
-export default function Landing({ goDashboard }) {
+export default function Landing({ goLogin }) {
   return (
     <div className="landing-wrapper">
 
@@ -32,7 +32,7 @@ export default function Landing({ goDashboard }) {
       </motion.p>
 
       <motion.button
-        onClick={goDashboard}
+        onClick={goLogin}
         className="cta-button"
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}

@@ -25,7 +25,7 @@ export default function AppLayout() {
         style={{ height: "100%" }}
       >
         {page === "landing" && (
-          <Landing goDashboard={() => go("dashboard")} goLogin={() => go("login")} />
+          <Landing goLogin={() => go("login")} />
         )}
         {page === "login" && (
           <Login
@@ -35,7 +35,7 @@ export default function AppLayout() {
           />
         )}
         {page === "signup" && (
-          <Signup goLogin={() => go("login")} />
+          <Signup goLogin={() => go("login")} goDashboard={() => go("dashboard")} />
         )}
         {page === "forgot" && (
           <ForgotPassword goLogin={() => go("login")} />

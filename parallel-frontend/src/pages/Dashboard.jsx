@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./Dashboard.css";
 import Sidebar from "../components/Sidebar";
 import ChatPanel from "../components/ChatPanel";
@@ -51,12 +51,29 @@ function IdeView() {
 export default function Dashboard() {
   const [activeTool, setActiveTool] = useState("Team");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [user, setUser] = useState({ id: "demo-user", name: "You" });
+  const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+
+  useEffect(() => {
+    const fetchMe = async () => {
+      try {
+        const res = await fetch(`${apiBase}/me`, { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setUser({ id: data.id, name: data.name || "You" });
+        }
+      } catch (err) {
+        // ignore; keep default
+      }
+    };
+    fetchMe();
+  }, [apiBase]);
 
   const renderRight = () => {
     if (activeTool === "Team") return <TeamView />;
     if (activeTool === "Inbox") return <InboxView />;
     if (activeTool === "IDE") return <IdeView />;
-    return <SummaryPanel />;
+    return <SummaryPanel user={user} activeTool={activeTool} />;
   };
 
   return (
@@ -67,7 +84,7 @@ export default function Dashboard() {
           ☰
         </button>
       )}
-      <ChatPanel />
+      <ChatPanel user={user} />
       {renderRight()}
     </div>
   );
