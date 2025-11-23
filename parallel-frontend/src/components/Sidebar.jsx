@@ -1,5 +1,6 @@
-import "./Sidebar.css";
 import ThemeToggle from "./ThemeToggle";
+import logo from "../assets/parallel-logo.svg"; 
+import "./Sidebar.css";
 
 export default function Sidebar() {
   const navItems = [
@@ -19,9 +20,12 @@ export default function Sidebar() {
   return (
     <div className="sidebar glass">
       <div className="sidebar-top">
-        <div className="logo">Parallel OS</div>
-
-        <button className="sidebar-btn primary">+ New chat</button>
+        <div className="sidebar-header">
+          <button className="logo-button" aria-label="New chat">
+            <img src={logo} alt="Parallel Logo" className="sidebar-logo" />
+            <span className="logo-mark">| Parallel</span>
+          </button>
+        </div>
 
         <div className="nav-list">
           {navItems.map((item) => (
