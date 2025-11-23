@@ -1,0 +1,128 @@
+.app-shell {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: 100vh;
+  gap: 18px;
+  padding: 20px;
+}
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+  padding: 20px 20px 24px;
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.03), transparent);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+.workspace__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.status-stack {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.status-pill {
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+
+.status-pill.online {
+  background: linear-gradient(120deg, rgba(103, 184, 255, 0.2), rgba(122, 123, 255, 0.28));
+  border-color: rgba(103, 184, 255, 0.4);
+}
+
+.status-pill.neutral {
+  color: var(--muted);
+}
+
+.status-pill.info {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.workspace__body {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 16px;
+  min-height: 60vh;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.chip {
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.chip.subtle {
+  color: var(--muted);
+}
+
+.chip.warm {
+  background: linear-gradient(120deg, rgba(255, 166, 43, 0.2), rgba(255, 115, 70, 0.28));
+  border-color: rgba(255, 166, 43, 0.35);
+}
+
+.pill-group {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.pill {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.pill.active {
+  border-color: rgba(103, 184, 255, 0.6);
+  background: linear-gradient(140deg, rgba(103, 184, 255, 0.14), rgba(122, 123, 255, 0.18));
+}
+
+.section-label {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 0 0 8px;
+}
+
+@media (max-width: 1100px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace__body {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,30 @@
+.app-shell::before,
+.app-shell::after {
+  content: "";
+  position: fixed;
+  width: 480px;
+  height: 480px;
+  filter: blur(140px);
+  opacity: 0.18;
+  z-index: -1;
+}
+
+.app-shell::before {
+  background: radial-gradient(circle, rgba(103, 184, 255, 0.6), transparent 70%);
+  top: -120px;
+  left: -120px;
+}
+
+.app-shell::after {
+  background: radial-gradient(circle, rgba(122, 123, 255, 0.6), transparent 70%);
+  bottom: -140px;
+  right: -120px;
+}
+
+.chat-feed:hover,
+.summary-panel:hover,
+.command-bar:hover,
+.sidebar:hover {
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 0 24px rgba(103, 184, 255, 0.12);
+}
