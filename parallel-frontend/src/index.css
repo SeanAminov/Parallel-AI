@@ -1,4 +1,27 @@
-@import "./styles/globals.css";
-@import "./styles/layout.css";
-@import "./styles/chat.css";
-@import "./styles/neon.css";
+@import "./theme.css";
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Display", sans-serif;
+}
+
+body, html, #root {
+  height: 100%;
+  background: var(--bg-pearl);
+  color: var(--text);
+}
+
+.glass {
+  background: var(--panel-glass);
+  backdrop-filter: var(--backdrop);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* Smooth transitions */
+html {
+  transition: background 0.4s ease, color 0.4s ease;
+}

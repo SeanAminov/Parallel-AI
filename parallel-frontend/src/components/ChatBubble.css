@@ -1,0 +1,20 @@
+.chat-bubble {
+  max-width: 720px;
+  margin: 14px 0;
+  padding: 14px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.ai-bubble {
+  background: var(--panel-glass);
+  border: 1px solid var(--border);
+}
+
+.user-bubble {
+  background: var(--accent);
+  color: #000;
+  margin-left: auto;
+  font-weight: 600;
+}

@@ -1,0 +1,49 @@
+.sidebar {
+  width: 220px;
+  padding: 28px;
+  border-radius: var(--radius);
+  background: var(--sidebar-glass);
+  backdrop-filter: var(--backdrop);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.sidebar .logo {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.menu {
+  margin-top: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.menu-item {
+  font-size: 15px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 8px 0;
+  transition: 0.15s;
+}
+
+.menu-item:hover {
+  color: var(--accent);
+  transform: translateX(4px);
+}
+
+.theme-toggle-btn {
+  margin-top: 20px;
+  padding: 12px;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  color: #000;
+}

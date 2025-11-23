@@ -1,38 +1,24 @@
-import { useStream } from "../store/streamStore";
+import "./SummaryPanel.css";
 
-function SummaryPanel() {
-  const { summary, chat } = useStream();
-  const latest = chat[chat.length - 1];
-
+export default function SummaryPanel() {
   return (
-    <section className="summary-panel">
-      <div className="panel-head">
-        <div>
-          <p className="eyebrow">Shared memory</p>
-          <h2>Team notes</h2>
-        </div>
-        <div className="chip warm">Append-only</div>
-      </div>
-      <p className="panel-copy">
-        Captured by the coordinator so you do not lose context between requests.
-      </p>
+    <div className="summary-panel glass">
+      <h2 className="summary-title">Recent Code Summary</h2>
 
-      <div className="summary-cards">
-        {summary.map((item, idx) => (
-          <article className="summary-card" key={item.id}>
-            <div className="summary-index">#{idx + 1}</div>
-            <p>{item.text}</p>
-          </article>
-        ))}
+      <div className="file-block">
+        <div className="file-name">Dashboard.jsx</div>
+        <pre className="code-box">UI layout optimized by Severin</pre>
       </div>
 
-      <div className="summary-footer">
-        {latest
-          ? `Last activity: ${latest.sender} at ${latest.time}`
-          : "No activity yet; ask a question to warm things up."}
+      <div className="file-block">
+        <div className="file-name">ChatPanel.jsx</div>
+        <pre className="code-box">Added typing indicator + async queue</pre>
       </div>
-    </section>
+
+      <div className="file-block">
+        <div className="file-name">index.jsx</div>
+        <pre className="code-box">Mounted AppLayout + theme provider</pre>
+      </div>
+    </div>
   );
 }
-
-export default SummaryPanel;

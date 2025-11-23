@@ -1,0 +1,36 @@
+.summary-panel {
+  width: 380px;
+  padding: 28px;
+  border-radius: var(--radius);
+  background: var(--panel-glass);
+  border: 1px solid var(--border);
+  backdrop-filter: var(--backdrop);
+  box-shadow: var(--shadow);
+  overflow-y: auto;
+}
+
+.summary-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 20px;
+}
+
+.file-block {
+  margin-bottom: 20px;
+}
+
+.file-name {
+  color: var(--accent);
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.code-box {
+  background: var(--code-bg);
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  font-family: Menlo, monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+  border: 1px solid var(--border);
+}
