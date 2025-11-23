@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Literal, Optional, Tuple
 import logging
+from collections import defaultdict, deque
 
 from fastapi import FastAPI, HTTPException, Depends, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +33,9 @@ from models import (
 from config import CLIENTS, OPENAI_MODEL
 from openai import OpenAI
 
+import httpx
+from fastapi.responses import RedirectResponse
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -45,13 +49,17 @@ if SPOON_IMPL == "official":
 else:
     from spoon_os import ask_one, ask_team, synthesize
 
-SUBSCRIBERS: set[asyncio.Queue] = set()
+SUBSCRIBERS: set[tuple[asyncio.Queue, Dict[str, Optional[str]]]] = set()
 PROPAGATE_ERRORS = os.getenv("PROPAGATE_ERRORS", "false").lower() == "true"
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 DEBUG_ERRORS = os.getenv("DEBUG_ERRORS", "false").lower() == "true"
+RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))  # seconds
+RATE_LIMIT_MAX = int(os.getenv("RATE_LIMIT_MAX", "60"))        # max requests per window
+RATE_LIMIT: defaultdict[str, deque] = defaultdict(deque)
+BANNED_TERMS = [t.strip().lower() for t in os.getenv("BANNED_TERMS", "").split(",") if t.strip()]
 
 TEAM = [
     {"id": "yug",     "name": "Yug"},
@@ -215,6 +223,16 @@ app = FastAPI(title="Parallel Workspace with Shared Memory")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+if not logger.handlers:
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO)
+    file_handler = logging.FileHandler("app.log")
+    file_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    stream_handler.setFormatter(formatter)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(stream_handler)
+    logger.addHandler(file_handler)
 
 # CORS (must not use "*" when allow_credentials=True)
 # origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
@@ -226,12 +244,12 @@ logger = logging.getLogger(__name__)
 #     allow_headers=["*"],
 # )
 
-#allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
-#origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins="http://localhost:5173",
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -243,6 +261,9 @@ async def debug_cors_and_errors(request: Request, call_next):
     logger.info("REQ %s %s Origin=%s", request.method, request.url, origin)
 
     try:
+        # Basic rate limiting by IP/user
+        key = rate_limit_key(request)
+        check_rate_limit(key)
         response = await call_next(request)
     except HTTPException as exc:
         # Normal HTTP errors (401/403/etc) – still wrap so we can attach CORS
@@ -290,6 +311,77 @@ def get_db():
     finally:
         db.close()
 
+def decode_token_sub(token: str) -> Optional[str]:
+    try:
+        data = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return data.get("sub")
+    except Exception:
+        return None
+
+
+def rate_limit_key(request: Request) -> str:
+    ip = request.client.host if request.client else "unknown"
+    token = request.cookies.get("access_token")
+    sub = decode_token_sub(token) if token else None
+    return f"{ip}:{sub or 'anon'}"
+
+
+def check_rate_limit(key: str):
+    now = datetime.utcnow().timestamp()
+    window_start = now - RATE_LIMIT_WINDOW
+    q = RATE_LIMIT[key]
+    while q and q[0] < window_start:
+        q.popleft()
+    if len(q) >= RATE_LIMIT_MAX:
+        raise HTTPException(status_code=429, detail="Too many requests, slow down.")
+    q.append(now)
+
+
+def ensure_agent(db: Session, agent_id: str, agent_name: str, user_id: Optional[str] = None):
+    """
+    Ensure an agent exists; create a system-backed agent if none exists.
+    """
+    existing = db.get(AgentORM, agent_id)
+    if existing:
+        return existing
+
+    owner_id = user_id
+    if not owner_id:
+        first_user = db.query(UserORM).first()
+        if first_user:
+            owner_id = first_user.id
+        else:
+            # create a system user so the FK is satisfied
+            system_user = UserORM(
+                id=str(uuid.uuid4()),
+                email="system@parallel.local",
+                name="System",
+                preferences={},
+                created_at=datetime.utcnow(),
+            )
+            db.add(system_user)
+            db.commit()
+            owner_id = system_user.id
+    agent = AgentORM(
+        id=agent_id,
+        user_id=owner_id,
+        name=agent_name,
+        persona_json={"role": agent_name},
+        created_at=datetime.utcnow(),
+    )
+    db.add(agent)
+    db.commit()
+    db.refresh(agent)
+    return agent
+
+@app.on_event("startup")
+def seed_system_agents():
+    db = SessionLocal()
+    try:
+        ensure_agent(db, "coordinator", "Coordinator")
+    finally:
+        db.close()
+
 
 def verify_password(plain: str, hashed: str) -> bool:
     try:
@@ -307,6 +399,16 @@ def create_access_token(data: Dict, expires_delta: Optional[timedelta] = None) -
     )
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def is_abusive_text(text: str) -> bool:
+    lower = text.lower()
+    if any(term in lower for term in BANNED_TERMS):
+        return True
+    # naive prompt-injection guardrails
+    if "ignore previous instructions" in lower:
+        return True
+    return False
 
 
 def get_current_user(request: Request, db: Session) -> Optional[UserORM]:
@@ -526,6 +628,9 @@ def build_prompt(
 
 {prefs_block}
 {mode_block}
+Guidance:
+- Answer concisely.
+- Do not include next steps or extra commentary unless the user explicitly asks for them.
 Recent memories:
 {memories_text or "(none)"}"""
 
@@ -595,21 +700,27 @@ def publish_event(payload: Dict):
     """Push events to SSE subscribers when propagation is enabled."""
     if not PROPAGATE_ERRORS:
         return
-    for q in list(SUBSCRIBERS):
+    for q, filters in list(SUBSCRIBERS):
         try:
+            room_filter = filters.get("room_id")
+            user_filter = filters.get("user_id")
+            if room_filter and payload.get("room_id") not in (room_filter, None):
+                continue
+            if user_filter and payload.get("user_id") not in (user_filter, None):
+                continue
             q.put_nowait(payload)
         except asyncio.QueueFull:
             continue
 
-async def event_generator():
+async def event_generator(filters: Dict):
     queue: asyncio.Queue = asyncio.Queue()
-    SUBSCRIBERS.add(queue)
+    SUBSCRIBERS.add((queue, filters))
     try:
         while True:
             data = await queue.get()
             yield f"data: {json.dumps(data)}\n\n"
     finally:
-        SUBSCRIBERS.discard(queue)
+        SUBSCRIBERS.discard((queue, filters))
 
 def run_graph(app_graph, inputs):
     """
@@ -648,11 +759,12 @@ def publish_error(room_id: str, message: str, meta: Optional[Dict] = None):
     })
 
 @app.get("/events")
-async def events():
+async def events(room_id: Optional[str] = None, user_id: Optional[str] = None):
     """
     Server-Sent Events stream for status/error propagation.
     """
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    filters = {"room_id": room_id, "user_id": user_id}
+    return StreamingResponse(event_generator(filters), media_type="text/event-stream")
 
 @app.post("/users", response_model=UserOut)
 def create_user(payload: CreateUserRequest, db: Session = Depends(get_db)):
@@ -869,6 +981,8 @@ def update_preferences(payload: PreferencesUpdate, request: Request, db: Session
 def create_room(payload: CreateRoomRequest, request: Request, db: Session = Depends(get_db)):
     user = require_current_user(request, db)
     org = get_or_create_org_for_user(db, user)
+    if is_abusive_text(payload.room_name):
+        raise HTTPException(400, "Room name rejected by safety filter.")
     room_id = str(uuid.uuid4())
     room = RoomORM(id=room_id, name=payload.room_name, org_id=org.id)
     db.add(room)
@@ -899,6 +1013,13 @@ def ask(room_id: str, payload: AskModeRequest, request: Request, db: Session = D
 
     publish_status(room_id, "ask_received", {"mode": payload.mode, "user": payload.user_name})
     logger.info("Ask received room_id=%s user_id=%s mode=%s", room_id, payload.user_id, payload.mode)
+
+    if is_abusive_text(payload.content):
+        logger.warning("Blocked abusive prompt room_id=%s user_id=%s", room_id, payload.user_id)
+        raise HTTPException(400, "Prompt blocked by safety filters.")
+
+    if len(payload.content) > 4000:
+        raise HTTPException(413, "Prompt too large. Please shorten your request.")
 
     # 1) store human message
     human = MessageORM(
@@ -1182,9 +1303,95 @@ def query_memory(room_id: str, payload: MemoryQueryRequest):
         {"role": "user", "content": f"{payload.user_name} asks: {payload.question}"},
     ]
     answer = chat(client_for("coordinator"), msgs, temperature=0.2)
-    note = append_memory_note(room, f"Memory was queried: {payload.question}")
+    note = append_memory_note(db, room, f"Memory was queried: {payload.question}")
     if note:
         db.add(note)
     db.commit()
     db.close()
     return {"answer": answer}
+
+
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
+
+@app.get("/auth/google/login")
+def google_login():
+    """
+    Redirects the user to Google's OAuth consent screen.
+    """
+    params = {
+        "client_id": os.getenv("GOOGLE_CLIENT_ID"),
+        "redirect_uri": os.getenv("GOOGLE_REDIRECT_URI"),
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "offline",
+        "prompt": "consent",
+    }
+
+    from urllib.parse import urlencode
+    authorize_url = "https://accounts.google.com/o/oauth2/v2/auth"
+    return RedirectResponse(f"{authorize_url}?{urlencode(params)}")
+
+
+@app.get("/auth/google/callback")
+def google_callback(code: str, db: Session = Depends(get_db)):
+    """
+    Handles Google's redirect, exchanges code for tokens,
+    finds/creates a user, sets our normal JWT cookie, and
+    redirects back to the frontend.
+    """
+    token_url = "https://oauth2.googleapis.com/token"
+
+    data = {
+        "code": code,
+        "client_id": os.getenv("GOOGLE_CLIENT_ID"),
+        "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
+        "redirect_uri": os.getenv("GOOGLE_REDIRECT_URI"),
+        "grant_type": "authorization_code",
+    }
+
+    # Exchange code for tokens
+    with httpx.Client() as client:
+        resp = client.post(token_url, data=data)
+    if resp.status_code != 200:
+        raise HTTPException(400, f"Google token error: {resp.text}")
+
+    token_data = resp.json()
+    id_token = token_data.get("id_token")
+    if not id_token:
+        raise HTTPException(400, "No id_token from Google")
+
+    # Decode ID token to get user info.
+    # (We’re not doing full crypto verification here; for dev it's fine.)
+    from jose import jwt as jose_jwt
+    claims = jose_jwt.get_unverified_claims(id_token)
+    email = claims.get("email")
+    name = claims.get("name") or email
+
+    if not email:
+        raise HTTPException(400, "Google account has no email")
+
+    # Find or create user in our DB
+    user = db.query(UserORM).filter(UserORM.email == email).first()
+    if not user:
+        user = UserORM(
+            id=str(uuid.uuid4()),
+            email=email,
+            name=name,
+            created_at=datetime.utcnow(),
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    # Issue our normal JWT and cookie (same as /auth/login)
+    token = create_access_token({"sub": user.id})
+
+    response = RedirectResponse(FRONTEND_BASE_URL)  # e.g. homepage or /app
+    response.set_cookie(
+        "access_token",
+        token,
+        httponly=True,
+        secure=False,  # set True in production with HTTPS
+        samesite="lax",
+    )
+    return response
