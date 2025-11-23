@@ -4,6 +4,7 @@ import "./Sidebar.css";
 
 export default function Sidebar({ active = "Team", onSelect = () => {}, onToggle = () => {}, onLogout = () => {} }) {
   const navItems = [
+    { label: "Manager" },
     { label: "Team" },
     { label: "Inbox" },
     { label: "IDE" },

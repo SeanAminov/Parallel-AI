@@ -5,6 +5,8 @@ import ChatPanel from "../components/ChatPanel";
 import SummaryPanel from "../components/SummaryPanel";
 import TeamPanel from "../components/TeamPanel";
 import { GitTextEditorPanel } from "../features/ide/GitTextEditorPanel";
+import Manager from "./Manager";
+import NotificationsPanel from "../components/NotificationsPanel";
 
 function TeamView({ user, statuses }) {
   return (
@@ -138,7 +140,13 @@ export default function Dashboard() {
   };
 
   const renderRight = () => {
-    if (activeTool === "Team") return <TeamView user={user} statuses={teamStatuses} />;
+  if (activeTool === "Manager") return <Manager currentUser={user} />;
+    if (activeTool === "Team") return (
+      <>
+        <TeamView user={user} statuses={teamStatuses} />
+        <NotificationsPanel user={user} />
+      </>
+    );
     if (activeTool === "Inbox") return <InboxView inbox={inbox} />;
     if (activeTool === "IDE") return <IdeView />;
     return <SummaryPanel user={user} activeTool={activeTool} activityLog={activityLog} roomData={roomData} />;
